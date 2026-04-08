@@ -14,30 +14,39 @@ from config import EMBEDDING_MODEL, VECTOR_COLLECTION, CHUNK_SIZE, CHUNK_OVERLAP
 
 
 def embed_texts(texts: List[str]) -> List[List[float]]:
-    """Embed texts using Nomic model via API or local service"""
+    """Embed texts using local nomic-embed-text model (batched, retried, validated)."""
     if not texts:
         return []
-    
-    # Try Nomic API if key provided
-    if NOMIC_API_KEY:
-        headers = {"Authorization": f"Bearer {NOMIC_API_KEY}"}
-        payload = {"texts": texts, "model": EMBEDDING_MODEL}
-        try:
-            resp = requests.post("https://api.nomic.ai/embeddings", json=payload, headers=headers, timeout=30)
-            resp.raise_for_status()
-            return resp.json().get("embeddings", [])
-        except Exception as e:
-            print(f"Nomic API error: {e}; falling back to sentence-transformers")
-    
-    # Fallback: use sentence-transformers locally (compatible with Nomic-like models)
-    try:
-        from sentence_transformers import SentenceTransformer
-        model = SentenceTransformer(EMBEDDING_MODEL)
-        embeddings = model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
-        return embeddings.tolist()
-    except Exception as e:
-        raise RuntimeError(f"Embedding failed: {e}")
+    from config import OLLAMA_BASE_URL
+    embed_url = f"{OLLAMA_BASE_URL}/api/embed"
+    batch_size = 64
+    timeout = 120
+    max_retries = 2
+    embeddings = []
 
+    for start in range(0, len(texts), batch_size):
+        batch = texts[start:start + batch_size]
+        attempt = 0
+        batch_embs = None
+        while attempt <= max_retries:
+            try:
+                resp = requests.post(embed_url, json={"model": "nomic-embed-text", "input": batch}, timeout=timeout)
+                resp.raise_for_status()
+                data = resp.json()
+                batch_embs = data.get("embeddings")
+                # basic validation
+                if not batch_embs or len(batch_embs) != len(batch):
+                    raise RuntimeError(f"Embedding count mismatch: expected {len(batch)}, got {len(batch_embs) if batch_embs is not None else 'None'}")
+                break
+            except Exception as e:
+                attempt += 1
+                if attempt > max_retries:
+                    raise RuntimeError(f"Ollama embedding failed on batch starting at {start}: {e}")
+                wait = 2 ** attempt
+                time.sleep(wait)
+        embeddings.extend(batch_embs)
+
+    return embeddings
 
 def read_pdf(path: str) -> str:
     try:
@@ -112,6 +121,12 @@ def ingest(source: str):
 
         chunks = chunk_text(text)
         for i, c in enumerate(chunks):
+            if not c:
+                continue
+            c = c.strip()
+            # skip very short chunks (noise)
+            if len(c) < 50:
+                continue
             doc_id = f + "::" + str(i)
             ids.append(doc_id)
             metadatas.append({"source": f, "chunk": i})
@@ -123,6 +138,8 @@ def ingest(source: str):
 
     print(f"Embedding {len(documents)} chunks...")
     embeddings = embed_texts(documents)
+    if not embeddings or len(embeddings) != len(documents):
+        raise RuntimeError(f"Embeddings length {len(embeddings) if embeddings is not None else 0} does not match documents {len(documents)}")
     coll.add(documents=documents, metadatas=metadatas, ids=ids, embeddings=embeddings)
     # client.persist()
     print(f"Ingested {len(documents)} chunks from {len(files)} files.")
