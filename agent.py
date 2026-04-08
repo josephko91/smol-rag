@@ -1,4 +1,7 @@
 """Research agent using LangChain RAG with Ollama + Chroma"""
+import os
+import threading
+
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
@@ -107,6 +110,21 @@ Answer:"""
             self.simple_prompt
             | self.llm
         )
+
+        # Warm up the model/runtime once in a background thread to avoid
+        # a slow first interactive request. Controlled by the WARMUP env var
+        # (set to "0" to disable).
+        try:
+            if os.environ.get("WARMUP", "1") != "0":
+                def _warm():
+                    try:
+                        # small, friendly prompt to initialize tokenizer/graph/metal kernels
+                        self.simple_chain.invoke({"question": "Hello"})
+                    except Exception:
+                        pass
+                threading.Thread(target=_warm, daemon=True).start()
+        except Exception:
+            pass
     
     def answer(self, question: str, use_rag: bool | None = None) -> str:
         """Answer a question intelligently.
