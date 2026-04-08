@@ -19,7 +19,7 @@ def respond(message, history):
         reply = r.json().get("reply", "")
     except Exception as e:
         reply = f"Error: {e}"
-    history.append({'role':'assistant', 'context':reply})
+    history.append({'role':'assistant', 'content':reply})
     return "", history
 
 
