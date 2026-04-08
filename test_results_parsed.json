@@ -1,0 +1,61 @@
+{
+  "export_date": "2026-04-08T19:26:47.053047",
+  "source_log": "test_output.log",
+  "metrics": {
+    "total_questions": 6,
+    "avg_docs_retrieved": 12.0,
+    "avg_context_tokens": 3592.6666666666665,
+    "verified_count": 6,
+    "turn_max": 6
+  },
+  "qa_pairs": [
+    {
+      "turn": 1,
+      "question": "What are cirrus clouds?",
+      "docs_retrieved": 12,
+      "context_tokens": 3701,
+      "context_chars": 16011,
+      "verified": true
+    },
+    {
+      "turn": 2,
+      "question": "What is the typical altitude of cirrus clouds?",
+      "docs_retrieved": 12,
+      "context_tokens": 3701,
+      "context_chars": 16011,
+      "verified": true
+    },
+    {
+      "turn": 3,
+      "question": "What is the composition of cirrus clouds?",
+      "docs_retrieved": 12,
+      "context_tokens": 3644,
+      "context_chars": 14009,
+      "verified": true
+    },
+    {
+      "turn": 4,
+      "question": "How do cirrus clouds affect Earth's climate and radiation?",
+      "docs_retrieved": 12,
+      "context_tokens": 3644,
+      "context_chars": 14009,
+      "verified": true
+    },
+    {
+      "turn": 5,
+      "question": "Based on what you just explained, why would understanding their ice structure be important?",
+      "docs_retrieved": 12,
+      "context_tokens": 3433,
+      "context_chars": 14010,
+      "verified": true
+    },
+    {
+      "turn": 6,
+      "question": "What did we just discuss about cloud radiative effects?",
+      "docs_retrieved": 12,
+      "context_tokens": 3433,
+      "context_chars": 14010,
+      "verified": true
+    }
+  ]
+}
