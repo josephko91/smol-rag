@@ -2,8 +2,12 @@ fastapi
 uvicorn[standard]
 sentence-transformers
 chromadb
-llama-cpp-python
+ollama
 langchain
+langchain-openai
+langchain-chroma
+vectorstore-langchain-chroma
 pypdf2
 pandas
 python-multipart
+requests

@@ -1,22 +1,37 @@
-"""Minimal LLM backend abstraction using llama-cpp-python if available"""
-from typing import Optional
-
-try:
-    from llama_cpp import Llama
-except Exception:
-    Llama = None
+"""LLM backend abstraction using Ollama HTTP API"""
+import requests
+from config import OLLAMA_BASE_URL, MODEL_NAME, MODEL_MAX_TOKENS, MODEL_TEMPERATURE
 
 
-class LLMBackend:
-    def __init__(self, model_path: Optional[str] = None):
-        if Llama is None:
-            raise RuntimeError('llama_cpp not available; install llama-cpp-python or provide another backend')
-        self.model = Llama(model_path=model_path)
+class OllamaBackend:
+    """Ollama inference backend via HTTP API"""
+    def __init__(self, base_url: str = OLLAMA_BASE_URL, model_name: str = MODEL_NAME):
+        self.base_url = base_url
+        self.model_name = model_name
+        self.endpoint = f"{base_url}/api/generate"
+        
+    def generate(self, prompt: str, max_tokens: int = MODEL_MAX_TOKENS, temperature: float = MODEL_TEMPERATURE) -> str:
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": False,
+            "temperature": temperature,
+            "num_predict": max_tokens,
+        }
+        try:
+            response = requests.post(self.endpoint, json=payload, timeout=60)
+            response.raise_for_status()
+            result = response.json()
+            return result.get('response', '').strip()
+        except Exception as e:
+            raise RuntimeError(f"Ollama backend error: {e}")
 
-    def generate(self, prompt: str, max_tokens: int = 256) -> str:
-        resp = self.model.create(prompt=prompt, max_tokens=max_tokens)
-        return resp.get('choices', [{}])[0].get('text', '').strip()
+
+class LLMBackend(OllamaBackend):
+    """Alias for backward compatibility"""
+    pass
 
 
 if __name__ == '__main__':
-    print('Model backend loaded (if llama-cpp-python installed)')
+    backend = OllamaBackend()
+    print(f'Ollama backend initialized (endpoint: {backend.endpoint}, model: {backend.model_name})')

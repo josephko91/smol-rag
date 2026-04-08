@@ -1,23 +1,57 @@
-"""Retriever wrapper for Chromadb"""
-from sentence_transformers import SentenceTransformer
+"""Retriever wrapper using LangChain + Chromadb with Nomic embeddings"""
+from typing import List, Dict
 import chromadb
 from chromadb.config import Settings
-from config import EMBEDDING_MODEL, VECTOR_COLLECTION, TOP_K
+from langchain_chroma import Chroma
+from config import EMBEDDING_MODEL, VECTOR_COLLECTION, TOP_K, CHROMA_PERSIST_DIR
+import requests
+
+
+def get_nomic_embedding_function():
+    """Create embedding function for LangChain Chroma"""
+    from langchain.embeddings.base import Embeddings
+    from typing import List
+    
+    class NomicEmbeddings(Embeddings):
+        def embed_documents(self, texts: List[str]) -> List[List[float]]:
+            """Embed search docs using Nomic or fallback to sentence-transformers"""
+            if not texts:
+                return []
+            try:
+                from sentence_transformers import SentenceTransformer
+                model = SentenceTransformer(EMBEDDING_MODEL)
+                embeddings = model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
+                return embeddings.tolist()
+            except Exception as e:
+                raise RuntimeError(f"Embedding failed: {e}")
+
+        def embed_query(self, text: str) -> List[float]:
+            return self.embed_documents([text])[0]
+    
+    return NomicEmbeddings()
 
 
 class Retriever:
     def __init__(self):
-        self.client = chromadb.Client(Settings())
-        self.coll = self.client.get_collection(VECTOR_COLLECTION)
-        self.embedder = SentenceTransformer(EMBEDDING_MODEL)
+        persist_dir = CHROMA_PERSIST_DIR
+        embeddings = get_nomic_embedding_function()
+        
+        self.retriever = Chroma(
+            collection_name=VECTOR_COLLECTION,
+            embedding_function=embeddings,
+            persist_directory=persist_dir,
+        ).as_retriever(search_kwargs={"k": TOP_K})
 
-    def retrieve(self, query: str, k: int = TOP_K):
-        q_emb = self.embedder.encode([query], convert_to_numpy=True)[0].tolist()
-        results = self.coll.query(query_embeddings=[q_emb], n_results=k)
-        docs = []
-        for d, m in zip(results['documents'][0], results['metadatas'][0]):
-            docs.append({"text": d, "meta": m})
-        return docs
+    def retrieve(self, query: str, k: int = TOP_K) -> List[Dict]:
+        """Retrieve top-k documents for a query"""
+        docs = self.retriever.invoke(query)
+        results = []
+        for doc in docs:
+            results.append({
+                "text": doc.page_content,
+                "meta": getattr(doc, 'metadata', {})
+            })
+        return results
 
 
 if __name__ == '__main__':

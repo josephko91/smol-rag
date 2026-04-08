@@ -1,16 +1,42 @@
-"""Simple ingest script: PDFs and CSVs -> chunk -> embed -> upsert to Chromadb"""
+"""Ingest pipeline: PDFs and CSVs -> chunk -> embed with Nomic -> upsert to Chromadb"""
 import argparse
 import glob
 import os
 from typing import List
 
-from sentence_transformers import SentenceTransformer
 import chromadb
 from chromadb.config import Settings
 import pypdf
 import pandas as pd
+import requests
 
-from config import EMBEDDING_MODEL, VECTOR_COLLECTION, CHUNK_SIZE, CHUNK_OVERLAP
+from config import EMBEDDING_MODEL, VECTOR_COLLECTION, CHUNK_SIZE, CHUNK_OVERLAP, NOMIC_API_KEY, CHROMA_PERSIST_DIR
+
+
+def embed_texts(texts: List[str]) -> List[List[float]]:
+    """Embed texts using Nomic model via API or local service"""
+    if not texts:
+        return []
+    
+    # Try Nomic API if key provided
+    if NOMIC_API_KEY:
+        headers = {"Authorization": f"Bearer {NOMIC_API_KEY}"}
+        payload = {"texts": texts, "model": EMBEDDING_MODEL}
+        try:
+            resp = requests.post("https://api.nomic.ai/embeddings", json=payload, headers=headers, timeout=30)
+            resp.raise_for_status()
+            return resp.json().get("embeddings", [])
+        except Exception as e:
+            print(f"Nomic API error: {e}; falling back to sentence-transformers")
+    
+    # Fallback: use sentence-transformers locally (compatible with Nomic-like models)
+    try:
+        from sentence_transformers import SentenceTransformer
+        model = SentenceTransformer(EMBEDDING_MODEL)
+        embeddings = model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
+        return embeddings.tolist()
+    except Exception as e:
+        raise RuntimeError(f"Embedding failed: {e}")
 
 
 def read_pdf(path: str) -> str:
@@ -50,11 +76,14 @@ def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) 
     return chunks
 
 
-def ingest(source: str, persist_directory: str = None):
-    # create embedding model
-    embedder = SentenceTransformer(EMBEDDING_MODEL)
-
-    client = chromadb.Client(Settings())
+def ingest(source: str):
+    # Create Chromadb client with persistence
+    settings = Settings(
+        chroma_db_impl="duckdb+parquet",
+        persist_directory=CHROMA_PERSIST_DIR,
+        anonymized_telemetry=False
+    )
+    client = chromadb.Client(settings)
     coll = client.get_or_create_collection(VECTOR_COLLECTION)
 
     files = []
@@ -90,8 +119,10 @@ def ingest(source: str, persist_directory: str = None):
         print("No documents found to ingest")
         return
 
-    embeddings = embedder.encode(documents, show_progress_bar=True, convert_to_numpy=True)
-    coll.add(documents=documents, metadatas=metadatas, ids=ids, embeddings=embeddings.tolist())
+    print(f"Embedding {len(documents)} chunks...")
+    embeddings = embed_texts(documents)
+    coll.add(documents=documents, metadatas=metadatas, ids=ids, embeddings=embeddings)
+    client.persist()
     print(f"Ingested {len(documents)} chunks from {len(files)} files.")
 
 

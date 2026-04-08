@@ -1,4 +1,5 @@
-from fastapi import FastAPI, UploadFile, File
+"""FastAPI server for smol-rag research agent"""
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
 import shutil
 import os
@@ -6,29 +7,70 @@ import os
 from ingest import ingest
 from agent import ResearchAgent
 
-app = FastAPI()
+app = FastAPI(title="smol-rag", description="Research assistant RAG agent")
+
+# Initialize agent globally
+try:
+    agent = ResearchAgent()
+except Exception as e:
+    print(f"Warning: Agent initialization failed: {e}")
+    agent = None
 
 
-class Query(BaseModel):
+class QueryRequest(BaseModel):
     q: str
 
 
-@app.post('/ingest')
+class IngestResponse(BaseModel):
+    status: str
+    file: str
+    message: str
+
+
+class QueryResponse(BaseModel):
+    query: str
+    answer: str
+
+
+@app.post('/ingest', response_model=IngestResponse)
 async def ingest_endpoint(file: UploadFile = File(...)):
-    saved = f"/tmp/{file.filename}"
-    with open(saved, 'wb') as out:
-        shutil.copyfileobj(file.file, out)
-    ingest(saved)
-    return {"status": "ok", "file": file.filename}
+    """Ingest a document (PDF, CSV, or TXT)"""
+    try:
+        saved_path = f"/tmp/{file.filename}"
+        with open(saved_path, 'wb') as out:
+            shutil.copyfileobj(file.file, out)
+        ingest(saved_path)
+        return {
+            "status": "success",
+            "file": file.filename,
+            "message": f"Ingested {file.filename}"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ingest failed: {str(e)}")
 
 
-@app.post('/query')
-async def query_endpoint(query: Query):
-    agent = ResearchAgent()
-    ans = agent.answer(query.q)
-    return {"answer": ans}
+@app.post('/query', response_model=QueryResponse)
+async def query_endpoint(query: QueryRequest):
+    """Query the research agent"""
+    if agent is None:
+        raise HTTPException(status_code=503, detail="Agent not initialized. Check Ollama connection.")
+    try:
+        answer = agent.answer(query.q)
+        return {"query": query.q, "answer": answer}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
 
 
 @app.get('/status')
 def status():
-    return {"status": "ready"}
+    """Check system status"""
+    return {
+        "status": "ready" if agent else "degraded",
+        "agent_ready": agent is not None,
+        "message": "Agent ready for queries" if agent else "Agent initialization pending"
+    }
+
+
+@app.get('/')
+def root():
+    return {"name": "smol-rag", "description": "Research assistant RAG agent"}
