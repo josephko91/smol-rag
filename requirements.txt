@@ -9,3 +9,4 @@ pypdf
 pandas
 python-multipart
 requests
+gradio
