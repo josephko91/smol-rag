@@ -1,12 +1,17 @@
 """Research agent using LangChain RAG with Ollama + Chroma"""
 import os
 import threading
+import logging
 
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from retriever import Retriever
 from config import OLLAMA_BASE_URL, MODEL_NAME, MODEL_TEMPERATURE, MODEL_MAX_TOKENS, MAX_PROMPT_TOKENS
+
+# Configure logging for debugging RAG context
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def format_docs(docs):
@@ -142,13 +147,28 @@ Answer:"""
 
             if retrieval_needed:
                 # Use RAG chain with document retrieval
+                logger.info(f"Using RAG for question: {question[:100]}...")
+                docs = self.retriever_obj.retrieve(question)
+                logger.info(f"Retrieved {len(docs)} documents")
+                for i, doc in enumerate(docs[:3]):  # Log first 3 docs' metadata
+                    meta = doc.get('meta', {})
+                    text_preview = doc.get('text', '')[:100].replace('\n', ' ')
+                    logger.info(f"  Doc {i}: {meta} | Preview: {text_preview}...")
+                
+                context = format_docs(docs)
+                logger.info(f"Formatted context length: {len(context)} characters")
+                if len(context) > 500:
+                    logger.info(f"Context preview (first 500 chars): {context[:500]}...")
+                
                 response = self.rag_chain.invoke({"question": question})
             else:
                 # Use simple chain without retrieval for conversational queries
+                logger.info(f"Using simple (no-RAG) mode for: {question[:100]}...")
                 response = self.simple_chain.invoke({"question": question})
 
             return response.content if hasattr(response, 'content') else str(response)
         except Exception as e:
+            logger.error(f"Error generating answer: {e}", exc_info=True)
             return f"Error generating answer: {e}"
 
 
