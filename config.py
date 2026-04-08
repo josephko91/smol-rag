@@ -7,7 +7,9 @@ OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")  #
 # Default model can be overridden at runtime with the environment variable
 # `MODEL_NAME`. Set this to your quantized/metal-enabled model if available.
 MODEL_NAME = os.environ.get("MODEL_NAME", "mistral:7b")  # Model name as registered in Ollama
-MODEL_TEMPERATURE = float(os.environ.get("MODEL_TEMPERATURE", 0.7))
+# Lower temperature (0.3) for more consistent, factual RAG answers (was 0.7)
+# Set to 0.0 for fully deterministic output; higher values increase creativity/variability
+MODEL_TEMPERATURE = float(os.environ.get("MODEL_TEMPERATURE", 0.3))
 MODEL_MAX_TOKENS = int(os.environ.get("MODEL_MAX_TOKENS", 256))
 
 # Embeddings via Nomic
