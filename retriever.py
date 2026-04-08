@@ -4,6 +4,9 @@ import chromadb
 from langchain_chroma import Chroma
 from config import EMBEDDING_MODEL, VECTOR_COLLECTION, TOP_K, CHROMA_PERSIST_DIR
 import requests
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def get_nomic_embedding_function():
@@ -21,6 +24,7 @@ def get_nomic_embedding_function():
             timeout = 60
             max_retries = 2
             embeddings = []
+            logger.debug(f"Embedding {len(texts)} texts in batches of {batch_size}")
             for i in range(0, len(texts), batch_size):
                 batch = texts[i:i+batch_size]
                 attempt = 0
@@ -33,12 +37,16 @@ def get_nomic_embedding_function():
                         if not batch_embs or len(batch_embs) != len(batch):
                             raise RuntimeError("embedding count mismatch")
                         embeddings.extend(batch_embs)
+                        logger.debug(f"Successfully embedded batch {i//batch_size + 1} ({len(batch)} texts)")
                         break
                     except Exception as e:
                         attempt += 1
                         if attempt > max_retries:
+                            logger.error(f"Embedding failed on batch starting at {i} after {max_retries} retries: {e}")
                             raise RuntimeError(f"Ollama embedding failed on batch starting at {i}: {e}")
+                        logger.warning(f"Embedding attempt {attempt} failed for batch at {i}, retrying in {2**attempt}s: {e}")
                         time.sleep(2 ** attempt)
+            logger.info(f"Successfully embedded all {len(texts)} texts")
             return embeddings
 
         def embed_documents(self, texts: List[str]) -> List[List[float]]:
@@ -63,12 +71,17 @@ class Retriever:
 
     def retrieve(self, query: str, k: int = TOP_K) -> List[Dict]:
         """Retrieve top-k documents for a query"""
+        logger.info(f"Retrieving top {k} docs for query: '{query[:100]}...'")
         docs = self.retriever.invoke(query)
+        logger.info(f"Retrieved {len(docs)} documents")
         results = []
-        for doc in docs:
+        for i, doc in enumerate(docs):
+            meta = getattr(doc, 'metadata', {})
+            text_len = len(doc.page_content) if doc.page_content else 0
+            logger.debug(f"  Result {i}: {text_len} chars, meta: {meta}")
             results.append({
                 "text": doc.page_content,
-                "meta": getattr(doc, 'metadata', {})
+                "meta": meta
             })
         return results
 
