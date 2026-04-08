@@ -2,6 +2,7 @@
 import os
 import threading
 import logging
+import tiktoken
 
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
@@ -13,14 +14,24 @@ from config import OLLAMA_BASE_URL, MODEL_NAME, MODEL_TEMPERATURE, MODEL_MAX_TOK
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Initialize tokenizer for token counting (using cl100k_base works well for most models)
+try:
+    token_encoder = tiktoken.get_encoding("cl100k_base")
+except Exception:
+    # Fallback: use simple approximation if tiktoken fails
+    token_encoder = None
+
 
 def format_docs(docs):
-    """Format retrieved documents for prompt"""
-    # Build a context string but cap its size to avoid very large prompts
-    # which increase latency. MAX_PROMPT_TOKENS is a character-based cap
-    # in this simple implementation (approximate).
+    """Format retrieved documents for prompt with token-aware truncation.
+    
+    Instead of character-based limiting, this now uses token counting to respect
+    actual token consumption. Ensures we don't accidentally exceed context window.
+    """
     parts = []
-    total = 0
+    total_tokens = 0
+    token_budget = MAX_PROMPT_TOKENS if token_encoder else None
+    
     for d in docs:
         text = (d.get('text') or '').strip()
         if not text:
@@ -28,13 +39,32 @@ def format_docs(docs):
         # skip very short noise
         if len(text) < 50:
             continue
+        
+        # Count tokens in this piece
+        if token_encoder and token_budget:
+            piece_tokens = len(token_encoder.encode(text))
+            # If this piece alone would exceed budget, skip it
+            if piece_tokens > token_budget - total_tokens:
+                logger.debug(f"Skipping doc (tokens {piece_tokens} > remaining {token_budget - total_tokens})")
+                break
+            total_tokens += piece_tokens
+        else:
+            # Fallback: approximate 1 token per 4 characters
+            piece_tokens = len(text) // 4
+            if piece_tokens > token_budget - total_tokens if token_budget else False:
+                break
+            total_tokens += piece_tokens
+        
         parts.append(text)
-        total += len(text)
-        if total >= MAX_PROMPT_TOKENS:
-            break
+    
     ctx = "\n\n".join(parts)
-    if len(ctx) > MAX_PROMPT_TOKENS:
-        return ctx[:MAX_PROMPT_TOKENS].rsplit('\n', 1)[0] + "\n\n..."
+    
+    if token_encoder:
+        actual_tokens = len(token_encoder.encode(ctx))
+        logger.info(f"Formatted context: {actual_tokens} tokens, {len(ctx)} characters")
+    else:
+        logger.info(f"Formatted context: ~{total_tokens} est. tokens, {len(ctx)} characters")
+    
     return ctx
 
 

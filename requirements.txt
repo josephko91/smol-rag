@@ -10,3 +10,4 @@ pandas
 python-multipart
 requests
 gradio
+tiktoken
