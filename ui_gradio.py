@@ -10,23 +10,30 @@ except Exception:
     pass
 
 
-def respond(message, history):
+def respond(message, history, use_rag=True):
     history = history or []
-    history.append({'role':'user', 'content': message})
+    history.append({'role': 'user', 'content': message})
     try:
-        r = requests.post(API_URL, json={"message": message}, timeout=60)
+        payload = {"message": message}
+        # include flag only if explicitly set (bool) to keep default semantics
+        payload["use_rag"] = bool(use_rag)
+        r = requests.post(API_URL, json=payload, timeout=60)
         r.raise_for_status()
         reply = r.json().get("reply", "")
     except Exception as e:
         reply = f"Error: {e}"
-    history.append({'role':'assistant', 'content':reply})
+    history.append({'role': 'assistant', 'content': reply})
     return "", history
 
 
 with gr.Blocks() as demo:
     chat = gr.Chatbot()
-    txt = gr.Textbox(placeholder="Ask something...", show_label=False)
-    txt.submit(respond, [txt, chat], [txt, chat])
+    with gr.Row():
+        txt = gr.Textbox(placeholder="Ask something...", show_label=False)
+        use_rag = gr.Checkbox(label="Use RAG (retrieve documents)", value=True)
+
+    # Submit the message with the selected `use_rag` option
+    txt.submit(respond, [txt, chat, use_rag], [txt, chat])
     txt.submit(lambda: None, None, txt)
 
 

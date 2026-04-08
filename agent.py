@@ -8,7 +8,26 @@ from config import OLLAMA_BASE_URL, MODEL_NAME, MODEL_TEMPERATURE, MODEL_MAX_TOK
 
 def format_docs(docs):
     """Format retrieved documents for prompt"""
-    return "\n\n".join([d['text'] for d in docs])
+    # Build a context string but cap its size to avoid very large prompts
+    # which increase latency. MAX_PROMPT_TOKENS is a character-based cap
+    # in this simple implementation (approximate).
+    parts = []
+    total = 0
+    for d in docs:
+        text = (d.get('text') or '').strip()
+        if not text:
+            continue
+        # skip very short noise
+        if len(text) < 50:
+            continue
+        parts.append(text)
+        total += len(text)
+        if total >= MAX_PROMPT_TOKENS:
+            break
+    ctx = "\n\n".join(parts)
+    if len(ctx) > MAX_PROMPT_TOKENS:
+        return ctx[:MAX_PROMPT_TOKENS].rsplit('\n', 1)[0] + "\n\n..."
+    return ctx
 
 
 def needs_retrieval(question: str) -> bool:
@@ -89,20 +108,27 @@ Answer:"""
             | self.llm
         )
     
-    def answer(self, question: str) -> str:
+    def answer(self, question: str, use_rag: bool | None = None) -> str:
         """Answer a question intelligently.
-        
-        Uses retrieval for domain-specific queries, and direct LLM response for conversations.
+
+        If `use_rag` is None, the agent will decide automatically whether to
+        retrieve documents (based on `needs_retrieval`). If `use_rag` is True/False
+        the behavior is forced accordingly.
         """
         try:
-            # Check if retrieval is needed
-            if needs_retrieval(question):
+            # Determine whether to use retrieval: explicit flag wins, otherwise auto
+            if use_rag is None:
+                retrieval_needed = needs_retrieval(question)
+            else:
+                retrieval_needed = bool(use_rag)
+
+            if retrieval_needed:
                 # Use RAG chain with document retrieval
                 response = self.rag_chain.invoke({"question": question})
             else:
                 # Use simple chain without retrieval for conversational queries
                 response = self.simple_chain.invoke({"question": question})
-            
+
             return response.content if hasattr(response, 'content') else str(response)
         except Exception as e:
             return f"Error generating answer: {e}"

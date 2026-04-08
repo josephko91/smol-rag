@@ -73,6 +73,9 @@ async def query_endpoint(query: QueryRequest):
 
 class ChatRequest(BaseModel):
     message: str
+    # Optional: when false, the agent will not retrieve documents and will
+    # answer using the base LLM only.
+    use_rag: bool | None = None
 
 
 class ChatResponse(BaseModel):
@@ -85,7 +88,9 @@ async def chat_endpoint(req: ChatRequest):
     if agent is None:
         raise HTTPException(status_code=503, detail="Agent not initialized. Check Ollama connection.")
     try:
-        reply = agent.answer(req.message)
+        # Pass the optional use_rag flag through to the agent. If None, agent
+        # will auto-decide whether to retrieve.
+        reply = agent.answer(req.message, use_rag=req.use_rag)
         return {"reply": reply}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
