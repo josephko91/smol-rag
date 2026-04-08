@@ -1,7 +1,7 @@
 """Research agent using LangChain RAG with Ollama + Chroma"""
 from langchain_ollama import ChatOllama
-from langchain.prompts import ChatPromptTemplate
-from langchain.schema.runnable import RunnablePassthrough
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
 from retriever import Retriever
 from config import OLLAMA_BASE_URL, MODEL_NAME, MODEL_TEMPERATURE, MODEL_MAX_TOKENS, MAX_PROMPT_TOKENS
 

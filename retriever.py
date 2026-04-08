@@ -7,7 +7,7 @@ import requests
 
 
 def get_nomic_embedding_function():
-    from langchain.embeddings.base import Embeddings
+    from langchain_core.embeddings import Embeddings
     from typing import List
     from config import OLLAMA_BASE_URL
     import requests, time
