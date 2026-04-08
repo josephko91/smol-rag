@@ -5,7 +5,7 @@ import os
 from typing import List
 
 import chromadb
-from chromadb.config import Settings
+# from chromadb.config import Settings
 import pypdf
 import pandas as pd
 import requests
@@ -78,13 +78,15 @@ def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) 
 
 def ingest(source: str):
     # Create Chromadb client with persistence
-    settings = Settings(
-        chroma_db_impl="duckdb+parquet",
-        persist_directory=CHROMA_PERSIST_DIR,
-        anonymized_telemetry=False
-    )
-    client = chromadb.Client(settings)
-    coll = client.get_or_create_collection(VECTOR_COLLECTION)
+    # settings = Settings(
+    #     chroma_db_impl="duckdb+parquet",
+    #     persist_directory=CHROMA_PERSIST_DIR,
+    #     anonymized_telemetry=False
+    # )
+    # client = chromadb.Client(settings)
+    # coll = client.get_or_create_collection(VECTOR_COLLECTION)
+    client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
+    coll = client.get_or_create_collection(name=VECTOR_COLLECTION)
 
     files = []
     if os.path.isdir(source):
@@ -122,7 +124,7 @@ def ingest(source: str):
     print(f"Embedding {len(documents)} chunks...")
     embeddings = embed_texts(documents)
     coll.add(documents=documents, metadatas=metadatas, ids=ids, embeddings=embeddings)
-    client.persist()
+    # client.persist()
     print(f"Ingested {len(documents)} chunks from {len(files)} files.")
 
 
