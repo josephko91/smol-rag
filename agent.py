@@ -108,10 +108,17 @@ class ResearchAgent:
         # Initialize retriever
         self.retriever_obj = Retriever()
         
-        # Define prompt template for RAG (with context)
+        # Conversation memory: list of (user_question, assistant_answer) tuples
+        # Kept in memory for this session. Older turns are pruned to save tokens.
+        self.conversation_history = []
+        self.max_history_items = 5  # Keep last 5 turns
+        
+        # Define prompt template for RAG (with context and conversation history)
         self.rag_prompt = ChatPromptTemplate.from_template(
-            """You are an expert research assistant. Use the provided context to answer the question thoroughly and accurately.
+            """You are an expert research assistant. Use the provided context and conversation history to answer questions thoroughly and accurately.
 If the answer is not contained in the context, clearly state that you don't have enough information.
+
+{history}
 
 Context:
 {context}
@@ -121,9 +128,11 @@ Question: {question}
 Answer:"""
         )
         
-        # Define prompt template for direct conversation (no context)
+        # Define prompt template for direct conversation (no context, but with history)
         self.simple_prompt = ChatPromptTemplate.from_template(
             """You are a helpful and friendly assistant. Answer the user's question naturally and conversationally.
+
+{history}
 
 Question: {question}
 
@@ -134,7 +143,8 @@ Answer:"""
         self.rag_chain = (
             {
                 "context": lambda x: format_docs(self.retriever_obj.retrieve(x["question"])),
-                "question": RunnablePassthrough()
+                "question": RunnablePassthrough(),
+                "history": lambda x: self._format_history(),
             }
             | self.rag_prompt
             | self.llm
@@ -142,7 +152,11 @@ Answer:"""
         
         # Build simple chain (without retrieval)
         self.simple_chain = (
-            self.simple_prompt
+            {
+                "history": lambda x: self._format_history(),
+                "question": RunnablePassthrough(),
+            }
+            | self.simple_prompt
             | self.llm
         )
 
@@ -161,12 +175,47 @@ Answer:"""
         except Exception:
             pass
     
+    def _format_history(self) -> str:
+        """Format conversation history for inclusion in prompt.
+        
+        Returns a formatted string with recent conversation turns, or empty string if no history.
+        """
+        if not self.conversation_history:
+            return ""
+        
+        history_lines = ["Recent conversation history:"]
+        for user_q, assistant_a in self.conversation_history:
+            # Truncate very long answers to keep history manageable
+            answer_preview = assistant_a[:300] + "..." if len(assistant_a) > 300 else assistant_a
+            history_lines.append(f"User: {user_q}")
+            history_lines.append(f"Assistant: {answer_preview}")
+        
+        return "\n".join(history_lines) + "\n"
+    
+    def _add_to_history(self, question: str, answer: str):
+        """Add a Q&A pair to conversation history, keeping recent items only."""
+        self.conversation_history.append((question, answer))
+        # Prune old history if we exceed max_history_items
+        if len(self.conversation_history) > self.max_history_items:
+            self.conversation_history.pop(0)
+            logger.debug(f"Pruned conversation history to {len(self.conversation_history)} items")
+        else:
+            logger.info(f"Conversation history: {len(self.conversation_history)} items")
+    
+    def clear_history(self):
+        """Clear conversation history to start fresh."""
+        old_len = len(self.conversation_history)
+        self.conversation_history.clear()
+        logger.info(f"Cleared {old_len} items from conversation history")
+    
     def answer(self, question: str, use_rag: bool | None = None) -> str:
-        """Answer a question intelligently.
+        """Answer a question intelligently with conversation memory.
 
         If `use_rag` is None, the agent will decide automatically whether to
         retrieve documents (based on `needs_retrieval`). If `use_rag` is True/False
         the behavior is forced accordingly.
+        
+        Maintains conversation history to provide context across multiple turns.
         """
         try:
             # Determine whether to use retrieval: explicit flag wins, otherwise auto
@@ -196,7 +245,12 @@ Answer:"""
                 logger.info(f"Using simple (no-RAG) mode for: {question[:100]}...")
                 response = self.simple_chain.invoke({"question": question})
 
-            return response.content if hasattr(response, 'content') else str(response)
+            answer_text = response.content if hasattr(response, 'content') else str(response)
+            
+            # Add to conversation history for follow-up context
+            self._add_to_history(question, answer_text)
+            
+            return answer_text
         except Exception as e:
             logger.error(f"Error generating answer: {e}", exc_info=True)
             return f"Error generating answer: {e}"

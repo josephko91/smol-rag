@@ -96,6 +96,18 @@ async def chat_endpoint(req: ChatRequest):
         raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
 
 
+@app.post('/reset-conversation')
+async def reset_conversation():
+    """Clear conversation history to start a fresh conversation."""
+    if agent is None:
+        raise HTTPException(status_code=503, detail="Agent not initialized. Check Ollama connection.")
+    try:
+        agent.clear_history()
+        return {"status": "success", "message": "Conversation history cleared"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Reset failed: {str(e)}")
+
+
 @app.get('/status')
 def status():
     """Check system status"""
