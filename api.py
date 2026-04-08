@@ -1,5 +1,6 @@
 """FastAPI server for smol-rag research agent"""
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import shutil
 import os
@@ -8,6 +9,15 @@ from ingest import ingest
 from agent import ResearchAgent
 
 app = FastAPI(title="smol-rag", description="Research assistant RAG agent")
+
+# Allow CORS for local UIs (gradio/streamlit/static pages)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Initialize agent globally
 try:
@@ -59,6 +69,26 @@ async def query_endpoint(query: QueryRequest):
         return {"query": query.q, "answer": answer}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
+
+
+class ChatRequest(BaseModel):
+    message: str
+
+
+class ChatResponse(BaseModel):
+    reply: str
+
+
+@app.post('/chat', response_model=ChatResponse)
+async def chat_endpoint(req: ChatRequest):
+    """Simple chat endpoint that returns agent reply for a single message."""
+    if agent is None:
+        raise HTTPException(status_code=503, detail="Agent not initialized. Check Ollama connection.")
+    try:
+        reply = agent.answer(req.message)
+        return {"reply": reply}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
 
 
 @app.get('/status')
