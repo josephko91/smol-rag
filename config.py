@@ -25,5 +25,5 @@ CHUNK_SIZE = 2000  # characters per chunk (approx)
 CHUNK_OVERLAP = 400
 
 # Retrieval
-TOP_K = 8
+TOP_K = 12  # Retrieve top 12 docs (increased from 8) to reduce context misses
 MAX_PROMPT_TOKENS = 4000
